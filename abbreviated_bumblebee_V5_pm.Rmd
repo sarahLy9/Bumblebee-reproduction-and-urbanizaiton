@@ -1,0 +1,156 @@
+---
+title: "Bumblebee reproduction and urbanizaiton"
+author: "Sarah Lyons"
+date: "10/28/2019"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r message = FALSE}
+library(readxl)
+library(ggplot2)
+library(nlme)
+library(lme4)
+library(tidyverse)
+
+library(visreg)
+library(emmeans)
+library(lmerTest)
+```
+
+
+Raw data was obtained through Dryad (https://datadryad.org/stash) “Lower bumblebee colony reproductive success in agricultural compared with urban environments” (Samuelson et al., 2018).  In this study, the authors investigated whether the degree of urbanization impacted the reproductive success of bumblebees (_Bombus terrestris_) by monitoring the production of sexual offspring in separately-located colonies.
+
+To monitor this, the researchers reared colonies from wild-caught bumblebee queens and placed them in different environments with varying degrees of urbanization and agricultural development. The colonies were monitored for many different variables in order to assess reproductive success and overall survivorship.
+
+
+The hypotheses tested in this analysis are: 
+
+1) The level of urbanization will have an effect on the reproductive success of bumblebee colonies.
+
+2) Parasitic invasion will decrease the reproductive success of bumblebee colonies, resulting in fewer sexual offspring being produced.
+
+The variables selected from the data are: 
+
+1)	The number of reproductive individuals produced in each colony **(Tot_rep)**, which includes the total number of males (Tot_male) and total number of gynes (sexually reproductive female caste of insects, Tot_gyne).  This discrete fixed variable is our chosen response variable.
+
+2)	The 500m radius clustered land-use (surrounding the colony) variable **(LU500)**, a categorical fixed factor that includes three different categorical levels: Agriculture, City, and Village.  This variable was chosen as one of our explanatory variables.
+
+3)	Whether _Bombus vastalis_ invaded the colony or not **(Cu_bin)**, a binary categorical variable (two levels, yes-1, or no-0).  This was chosen as our second explanatory variable.  
+
+
+```{r}
+ab <- read_excel("Ubran_Bumblebee_ColonyData.xlsx", sheet = "Ubran_Bumblebee_ColonyData")
+ab$Cu_bin <- as.factor(ab$Cu_bin)
+str(ab)
+```
+
+To visualize the data, we created a stripchart showing the relationship between the population of the reproductive class of each colony and land use in a 500 meter radius around each hive. We used ggplot for this step (don't be mad we are doing our best).
+```{r fig.cap="Figure 1: Strip chart showing numbers of individuals in reproductive class for each colony broken down by surroundings of the hive (500m radius, n = 38)"}
+ggplot(ab, aes(LU500, Tot_rep)) +
+    geom_jitter(color = "firebrick", size = 3, height = 0.2, width = .05, alpha = 0.5) +
+    labs(x = "Location Description", y = "Population of Reproductive Class") + 
+    theme_classic()
+```
+
+
+```{r}
+xtabs(~ LU500 + Cu_bin, data = ab)
+```
+
+visualization of the response varaible cateogorized by the secondary explanatory variable of _B. vastalis_ invasion. 
+```{r fig.cap="Figure 2: Strip chart showing numbers of individuals in reproductive class for each colony broken down by presence of _B. vastalis_ (n = 38)"}
+ggplot(ab, aes(as.factor(Cu_bin), Tot_rep)) +
+    geom_jitter(color = "firebrick", size = 3, height = 0.2, width = 0.05, alpha = 0.5) +
+    labs(x = "B. vastalis invasion", y = "Population of Reproductive Class") + 
+    theme_classic()
+```
+
+This data indicates that the presence of _B. vastalis_  reduces the reproductive success of the colonies. 
+
+Determine if tje data is normally distributed.
+
+```{r fig.cap="Figure 3: Histogram A shows the distribution of the counts of individuals in the reproductive class on the orignal scale. Histogram B is the same data on a log scale (n=38)."}
+par(mfrow = c(1,2))
+hist(ab$Tot_rep, main = "Histogram A", ylab = "Frequency of Values", xlab = "Count of Reproducibles")
+hist(log(ab$Tot_rep), main = "Histogram B", ylab = "Frequency of Values", xlab = "Count of Reproducibles (log scale)")
+```
+
+As seen in the above histograms, the count data is not normally distributed even after log transformation. Therefore a generalized linear model (glm) will be used to examine the relationship between the counts of reproductive individuals in each colony, the type of land-use in a 500 meter radius surrounding the colony, as well as the presence of parastic invasion by B. vastalis. By using a glm, we are transforming the expected values as apposed to the response variable itself. 
+
+A poission distribution is likely appropriate to model the response variable because the data is count data of individuals in a colony. This is because the Poisson distribution will generate only whole numbers, in line with the counts of bees we are modeling. The Poisson distribution has only one parameter describing the mean and the variance, which is also its expected value. In this case, we would use the log function to link the transformed expected values to the linear model. The log function is the link function for the parameter of the poisson distibution.
+
+
+The assumptions are not met for either explanatory variable. Therefore we must use the quasi-poisson distribution. In this distribution, we calculate the relationship between the mean and the variance as apposed to a probabilty distribution. This produces a “quasi-likelihood” estimate similar to a maxiumum likelihood estimate.
+
+```{r}
+glm_1<-glm(Tot_rep ~ LU500 + Cu_bin, data =ab, family = quasipoisson(link="log"))
+
+summary(glm_1)
+```
+
+
+We can see from the estimates of the coefficients that in comparison to agriculturally predominant land-use, cities and villages have a positive effect on the reproductive success of colonies while B. vestalis infection has a negative effect.
+
+Deviance values relate to the “goodness of fit” of the glm applied to the data. Higher values correspond to a worse fit and vice versa. The null deviance shows how well the response variable is predicted by a model that includes only the intercept (grand mean). The residual deviance shows that the inclusion of our independent variables decreased the deviance from 1064.35 on 37 degrees of freedom to 784.02 on 34 degrees of freedom, a large reduction. The Fischer’s scoring algorithm is derived from Newton’s algorithm for maximum likelihood. Our summary indicates that Fischer’s scoring algorithm required six iterations in order to perform the fit.
+
+The dispersion parameter is the mean square error (the average squared difference between the estimated values and the actual values) of the glm, which in our data is quite high. This indicates within our treatments our means and variances are not equal. Therefore it is appropriate that we used a quasipoisson distribution and not a Poisson distribution. 
+
+
+To visualize the model, we will use the visreg() function.
+```{r fig.cap = "Figure 4: shows the estimated mean number of reproductive individuals in colonies for each treatment on the transformed log scale as well as working values for the response variable (n = 38)."}
+visreg(glm_1, by = "Cu_bin", xvar = "LU500", main = "")
+
+```
+
+```{r fig.cap="Figure 5: shows the estimated mean of reproductive individuals in colonies for each treatment on the original scale (n = 38). Standard errors are shown as grey bars around estimates."}
+visreg(glm_1, by = "Cu_bin", xvar = "LU500", scale =  "response", rug = FALSE, main = "")
+```
+
+
+In figure 4, the points are not the transformed data, but rather are “working values” for the response variable from the last iteration of model fitting, which glm() uses behind the scenes to fit the model on the transformed scale. The fitted values are transformed means that were estimated using the log scale. The estimated means in figure 5, as well as the fitted values below, are displayed in the original scale.
+
+We can now use the emmeans() function to see our predicted values of the model for each of our indepenedent variables. Estimated marginal means (EMMs) refer to the mean response for each factor, adjusted for any other variables in the model. We then compared the EMMs with one another using the pairs() function.
+```{r}
+ab.emm <- emmeans(glm_1, c("LU500","Cu_bin"), type = "response")
+ab.emm
+```
+The rate is the coefficient values for each combination of our predictive variables. _Estimated marginal means (EMMs) refer to the mean response for each factor, adjusted for any other variables in the model._ 
+
+
+
+In order to test the hypothesis, we will conduct and an ANOVA test against the null hypothesis that there is no difference in the number of individuals in the reproductive class between hives located in agricultural, city and village areas.
+
+```{r}
+anova(glm_1, test="F")
+```
+
+Counts of reproductive classes in colonies differ significantly among land use areas (ANOVA, F = 5.75, n = 38, df = 35, p = 0.007). There does not however appear to be a significant affect of _B. vestalis_ invasion. 
+
+We then compared the EMMs with one another using the pairs() function.
+```{r}
+pairs(ab.emm)
+```
+This is a post hoc test showing that there is not a significant difference between the treatment combinations that include the _B. vesalis_ infections. This is further evidence that the presence of _B. vestalis_ in the colonies does not significantly effect the numbers of individuals in the reproductive class. 
+
+This lack of significance could also be due to lack of datapoints as our data did not include many samples without in Agricultural areas and most colonies did not have _B. vestalis_ infections. 
+
+
+**Refrences:** 
+
+Samuelson, A., Gill, R., Brown, M., & Leadbeater, E. (2018). Lower bumblebee colony reproductive success in agricultural compared with urban environments. Proceedings Of The Royal Society B: Biological Sciences, 285(1881), 20180807. doi: 10.1098/rspb.2018.0807 
+
+Link to the data: 
+
+https://datadryad.org/stash/dataset/doi:10.5061/dryad.c68cj62
+
+Link to full paper:
+
+https://royalsocietypublishing.org/doi/pdf/10.1098/rspb.2018.0807)
+
+
+
+**Clean R Code**
